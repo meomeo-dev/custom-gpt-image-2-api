@@ -83,7 +83,6 @@ class GPTImageEdit:
         for i in range(2, 9):  # 图片1 为必填，图片2~8 可选
             opt["图片%d" % i] = ("IMAGE",)
         opt["遮罩"] = ("MASK",)  # 可选；透明(选中)区域会被编辑
-        opt["精细度"] = (api_client.INPUT_FIDELITY_OPTIONS, {"default": "default"})
         opt.update(_common_optional())
         return {
             "required": {
@@ -119,7 +118,6 @@ class GPTImageEdit:
             output_format=kw.get("输出格式", "default"),
             output_compression=kw.get("压缩质量"),
             moderation=kw.get("审核级别", "default"),
-            input_fidelity=kw.get("精细度", "default"),
         )
         img = api_client.edit_images(
             base_url, api_key, params, ref_pngs, mask_png,

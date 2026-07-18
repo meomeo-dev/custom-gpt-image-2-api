@@ -33,8 +33,6 @@ def main():
     ap.add_argument("--quality", default=None, help="auto/high/medium/low")
     ap.add_argument("--background", default=None, help="auto/transparent/opaque")
     ap.add_argument("--output-format", dest="output_format", default=None, help="png/jpeg/webp")
-    ap.add_argument("--input-fidelity", dest="input_fidelity", default=None,
-                    help="high/low（仅 /images/edits）")
     ap.add_argument("--image", action="append", default=[],
                     help="参考图路径，可重复；提供后走 /images/edits")
     ap.add_argument("--mask", default=None, help="遮罩图路径（仅 /images/edits）")
@@ -56,8 +54,6 @@ def main():
     if args.image:
         print("→ 图生图 /images/edits，参考图:", args.image)
         form = {k: str(v) for k, v in common.items()}
-        if args.input_fidelity:
-            form["input_fidelity"] = args.input_fidelity
         files = [("image[]", (p, open(p, "rb").read(), "image/png")) for p in args.image]
         if args.mask:
             files.append(("mask", (args.mask, open(args.mask, "rb").read(), "image/png")))

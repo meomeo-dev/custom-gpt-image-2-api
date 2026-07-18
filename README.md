@@ -15,7 +15,7 @@
 ## 功能特点
 
 - **自定义接口**:`base_url` 和 `api_key` 完全由你填写,一个配置节点可连多个生成/编辑节点
-- **参数齐全**:`size / n / quality / background / output_format / output_compression / moderation`,编辑节点另有 `image[]`(最多 8 张)、`mask`(遮罩)、`input_fidelity`(精细度)
+- **参数齐全**:`size / n / quality / background / output_format / output_compression / moderation`,编辑节点另有 `image[]`(最多 8 张)、`mask`(遮罩)
 - **OpenAI 兼容**:任何兼容 OpenAI 图像接口的服务都能用
 - **界面中文**:所有参数标签中文显示
 - **无第三方外发**:密钥 / 提示词 / 图片只发往你配置的 `base_url`,无图床中转、无遥测
@@ -52,7 +52,6 @@ cd custom-gpt-image-2-api && pip install -r requirements.txt
 | 图片1 | — | ✅ 必填 | 第一张参考图 |
 | 图片2~8 | — | 可选 | 追加参考图(共最多 8 张) |
 | 遮罩 mask | — | 可选 | `MASK` 输入;透明(选中)区域会被编辑 |
-| 精细度 input_fidelity | — | 可选 | `high`/`low`,贴近原图程度 |
 | 数量 n | ✅ | ✅ | 1~10,多张尺寸一致时合并为批次 |
 | 质量 quality | ✅ | ✅ | `default`/`auto`/`high`/`medium`/`low` |
 | 背景 background | ✅ | ✅ | `default`/`auto`/`transparent`/`opaque` |

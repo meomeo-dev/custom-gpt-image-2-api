@@ -35,7 +35,6 @@
 | 图片1 | `image[]` | — | ✅必填 | 第一张参考图 |
 | 图片2~8 | `image[]` | — | 可选 | 追加参考图(最多 8) |
 | 遮罩 | `mask` | — | 可选 | `MASK`;透明(选中)区域被编辑,alpha=(1-mask)*255 |
-| 精细度 | `input_fidelity` | — | 可选 | `high`/`low`,贴近原图程度 |
 | 数量 | `n` | ✅ | ✅ | 1~10,默认 1 |
 | 质量 | `quality` | ✅ | ✅ | `default`/`auto`/`high`/`medium`/`low` |
 | 背景 | `background` | ✅ | ✅ | `default`/`auto`/`transparent`/`opaque` |
@@ -91,4 +90,4 @@
 
 ## 7. 命令行自测
 
-见 `test_api.py`(`--base` 与 `--key` 必填,无预设地址),支持 `--image`(可重复)、`--mask`、`--quality`、`--background`、`--output-format`、`--input-fidelity` 等,先验证服务端连通性再进 ComfyUI。
+见 `test_api.py`(`--base` 与 `--key` 必填,无预设地址),支持 `--image`(可重复)、`--mask`、`--quality`、`--background`、`--output-format` 等,先验证服务端连通性再进 ComfyUI。

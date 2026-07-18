@@ -39,7 +39,6 @@ QUALITY_OPTIONS = ["default", "auto", "high", "medium", "low"]
 BACKGROUND_OPTIONS = ["default", "auto", "transparent", "opaque"]
 OUTPUT_FORMAT_OPTIONS = ["default", "png", "jpeg", "webp"]
 MODERATION_OPTIONS = ["default", "auto", "low"]
-INPUT_FIDELITY_OPTIONS = ["default", "high", "low"]  # 仅 /images/edits
 
 # 连接建立超时(秒)；读取超时由调用方按生图时长传入(可能很久)。
 CONNECT_TIMEOUT = 15
@@ -158,8 +157,7 @@ def unpack_config(config):
 
 def build_params(model, prompt, size="auto", n=1, quality="default",
                  background="default", output_format="default",
-                 output_compression=None, moderation="default",
-                 input_fidelity="default"):
+                 output_compression=None, moderation="default"):
     """构造两个端点共用的参数字典。枚举取 "default" 时不发送该字段。
 
     返回的是「标准 python 值」的 dict：generations 直接当 JSON body；
@@ -179,7 +177,6 @@ def build_params(model, prompt, size="auto", n=1, quality="default",
         ("background", background),
         ("output_format", output_format),
         ("moderation", moderation),
-        ("input_fidelity", input_fidelity),
     ):
         v = _clean(val)
         if v and v != "default":
