@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 环境
+.venv/
+venv/
+.env
+
+# 测试输出（test_api.py 生成）
+test_output.png
+nerapi_test_output.png
+
+# 系统
+.DS_Store
+Thumbs.db

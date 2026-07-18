@@ -1,0 +1,33 @@
+[project]
+name = "comfyui-nanobanana-gpt-image-2"
+description = "ComfyUI custom nodes for Nano-Banana (nano-banana-pro / nano-banana-2) and GPT-Image-2 image generation and editing via any OpenAI-compatible endpoint. User-supplied base_url and api_key, text-to-image and image-to-image with up to 8 reference images."
+version = "2.0.0"
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests",
+    "Pillow",
+    "numpy",
+]
+keywords = [
+    "comfyui",
+    "gpt-image-2",
+    "gpt-image2",
+    "nano-banana",
+    "nano-banana-pro",
+    "nano-banana-2",
+    "banana",
+    "openai-compatible",
+    "image-generation",
+    "text-to-image",
+    "image-to-image",
+]
+
+[project.urls]
+Repository = "https://github.com/Guguniaoer/ComfyUI-Nerapi"
+
+[tool.comfy]
+PublisherId = "guguniaoer"
+DisplayName = "ComfyUI-Nerapi"
+Icon = ""
