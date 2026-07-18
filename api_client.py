@@ -131,6 +131,24 @@ def _auth_headers(api_key):
     return {"Authorization": "Bearer " + key}
 
 
+def size_from_wh(width, height):
+    """宽/高 -> OpenAI size 字符串。两者都 >0 时拼 "宽x高"，否则 "auto"。
+
+    不强制圆整用户填的值；只在非 16 倍数时给出提示（gpt-image-2 通常要求宽高
+    为 16 的倍数、1:3~3:1、≤3840x2160），最终由服务端校验。
+    """
+    try:
+        w = int(width or 0)
+        h = int(height or 0)
+    except (TypeError, ValueError):
+        return "auto"
+    if w <= 0 or h <= 0:
+        return "auto"
+    if w % 16 or h % 16:
+        print("[GPT-Image] 提示：gpt-image-2 通常要求宽高为 16 的倍数，当前 %dx%d 可能被拒。" % (w, h))
+    return "%dx%d" % (w, h)
+
+
 def unpack_config(config):
     """从配置节点的输出里取出 (base_url, api_key)。"""
     if not config or not isinstance(config, (tuple, list)) or len(config) < 2:

@@ -39,8 +39,10 @@ class GPTImageGenerate:
                 "配置": ("IMAGE_API_CONFIG",),
                 "提示词": ("STRING", {"default": "", "multiline": True}),
                 "模型": ("STRING", {"default": "gpt-image-2"}),
-                # gpt-image-2 支持任意 宽x高（16 的倍数，1:3~3:1，≤3840x2160）；auto 自动。
-                "尺寸": ("STRING", {"default": "auto"}),
+                # 宽/高 均为 0 表示 auto（服务端自动定尺寸）；
+                # gpt-image-2 支持任意尺寸，宽高需 16 的倍数、1:3~3:1、≤3840x2160。
+                "宽": ("INT", {"default": 0, "min": 0, "max": 3840, "step": 16}),
+                "高": ("INT", {"default": 0, "min": 0, "max": 3840, "step": 16}),
             },
             "optional": _common_optional(),
         }
@@ -55,7 +57,7 @@ class GPTImageGenerate:
         params = api_client.build_params(
             model=kw.get("模型", "gpt-image-2"),
             prompt=kw.get("提示词", ""),
-            size=kw.get("尺寸", "auto"),
+            size=api_client.size_from_wh(kw.get("宽"), kw.get("高")),
             n=kw.get("数量", 1),
             quality=kw.get("质量", "default"),
             background=kw.get("背景", "default"),
@@ -88,8 +90,9 @@ class GPTImageEdit:
                 "配置": ("IMAGE_API_CONFIG",),
                 "提示词": ("STRING", {"default": "", "multiline": True}),
                 "模型": ("STRING", {"default": "gpt-image-2"}),
-                # edits 端支持 auto/1024x1024/1536x1024/1024x1536（取值以服务端为准）。
-                "尺寸": ("STRING", {"default": "auto"}),
+                # 宽/高 均为 0 表示 auto；edits 端常见 1024x1024 / 1536x1024 / 1024x1536。
+                "宽": ("INT", {"default": 0, "min": 0, "max": 3840, "step": 16}),
+                "高": ("INT", {"default": 0, "min": 0, "max": 3840, "step": 16}),
                 "图片1": ("IMAGE",),
             },
             "optional": opt,
@@ -109,7 +112,7 @@ class GPTImageEdit:
         params = api_client.build_params(
             model=kw.get("模型", "gpt-image-2"),
             prompt=kw.get("提示词", ""),
-            size=kw.get("尺寸", "auto"),
+            size=api_client.size_from_wh(kw.get("宽"), kw.get("高")),
             n=kw.get("数量", 1),
             quality=kw.get("质量", "default"),
             background=kw.get("背景", "default"),
