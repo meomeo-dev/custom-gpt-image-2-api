@@ -42,9 +42,11 @@
 | 输出格式 | `output_format` | ✅ | ✅ | `default`/`png`/`jpeg`/`webp` |
 | 压缩质量 | `output_compression` | ✅ | ✅ | 0~100,**仅输出 jpeg/webp 时发送**,默认 100 |
 | 审核级别 | `moderation` | ✅ | ✅ | `default`/`auto`/`low` |
-| 超时秒数 | (HTTP timeout) | ✅ | ✅ | 默认 300;OpenAI 图像接口同步返回,无需轮询 |
+| 流式 | `stream` | ✅ | ✅ | 布尔,默认关;长耗时开启保活(见第 5 节) |
+| 流式预览数 | `partial_images` | ✅ | ✅ | 0~3,默认 2;流式时中途预览张数 |
+| 超时秒数 | (读取超时) | ✅ | ✅ | 默认 900(15min),上限 3600;采用 (连接15s, 读取N秒) 元组 |
 
-> **`default` 档 = 不发送该字段**,让服务端用其默认值。这样面对不支持某字段的 OpenAI 兼容网关时不会因未知参数报 400。`output_compression` 还额外要求 `output_format` 为 jpeg/webp 才发送。
+> **`default` 档 = 不发送该字段**,让服务端用其默认值。这样面对不支持某字段的 OpenAI 兼容网关时不会因未知参数报 400。`output_compression` 还额外要求 `output_format` 为 jpeg/webp 才发送。`stream`/`partial_images` 仅在勾选「流式」时才发送。
 
 ### 结果读取
 
@@ -65,7 +67,17 @@
 - **base_url 决定数据去向**:密钥、提示词、参考图都会发给你填的地址。请只填你信任的服务端。
 - 若服务端在响应里返回了 `url`,插件会去下载该 `url`(取回结果图片所必需);该地址由你的服务端控制。
 
-## 5. 迁移说明
+## 5. 长耗时与保活
+
+生图可能耗时数分钟到十几分钟。长时间无数据流动的连接容易被中间负载均衡/反向代理判空闲切断。三层应对:
+
+1. **读取超时足够大**:节点「超时秒数」默认 900、上限 3600;`timeout=(15, N)`,连接 15s 快速失败、读取给足 N 秒。仅覆盖客户端自身。
+2. **流式(官方保活机制,推荐)**:勾选「流式」→ 发送 `stream=true` + `partial_images`,服务端通过 SSE 分批推 `*.partial_image` 事件、最后 `*.completed` 带完整图。连接持续有数据流动,可越过中间代理的 idle timeout。插件解析:遍历 `data:` 行 JSON,按 `type` 取 `completed` 的 `b64_json`(取不到则用最后一个 partial 兜底)。**若响应 Content-Type 不是 `text/event-stream`(网关没按流式返回),自动回退普通 JSON 解析**,不会因开了流式而失败。
+3. **TCP keepalive**:共享 `requests.Session` 上启用 `SO_KEEPALIVE`(+ 平台相关 `TCP_KEEPIDLE/INTVL/CNT`),维持 NAT/防火墙映射。对 L7 负载均衡的应用层 idle timeout 无效。
+
+> 端到端每层读超时都要 ≥ 生图时长。你能控本插件与自建网关;中间第三方 LB/nginx(`proxy_read_timeout` 等)不够大时,只有流式能保住连接。流式模式下多张(n>1)一般只回最终一张。
+
+## 6. 迁移说明
 
 ### 从最初的 nerapi.com 版本
 | 旧 | 现在 |
@@ -77,6 +89,6 @@
 - 旧的单个「GPT-Image-2」节点靠"有没有连参考图"自动切换端点;3.0 拆成 **GPT-Image 生成** 与 **GPT-Image 编辑** 两个节点,端点显式可选。
 - 打开旧工作流后:按需替换为对应节点,重新连「配置」,并设置新增的 `quality/background/output_format/...` 等参数(留 `default` 即保持旧行为)。
 
-## 6. 命令行自测
+## 7. 命令行自测
 
 见 `test_api.py`(`--base` 与 `--key` 必填,无预设地址),支持 `--image`(可重复)、`--mask`、`--quality`、`--background`、`--output-format`、`--input-fidelity` 等,先验证服务端连通性再进 ComfyUI。

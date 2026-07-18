@@ -21,7 +21,11 @@ def _common_optional():
         "输出格式": (api_client.OUTPUT_FORMAT_OPTIONS, {"default": "default"}),
         "压缩质量": ("INT", {"default": 100, "min": 0, "max": 100, "step": 1}),
         "审核级别": (api_client.MODERATION_OPTIONS, {"default": "default"}),
-        "超时秒数": ("INT", {"default": 300, "min": 30, "max": 1800, "step": 10}),
+        # 长耗时保活：开启流式后服务端分批推送 SSE 事件，避免中间代理空闲超时切断连接。
+        "流式": ("BOOLEAN", {"default": False}),
+        "流式预览数": ("INT", {"default": 2, "min": 0, "max": 3, "step": 1}),
+        # 读取超时；生图可能十几分钟，默认 900s(15min)、上限 3600s(60min)。
+        "超时秒数": ("INT", {"default": 900, "min": 30, "max": 3600, "step": 30}),
     }
 
 
@@ -59,8 +63,12 @@ class GPTImageGenerate:
             output_compression=kw.get("压缩质量"),
             moderation=kw.get("审核级别", "default"),
         )
-        img = api_client.generate_images(base_url, api_key, params,
-                                         timeout=kw.get("超时秒数", 300))
+        img = api_client.generate_images(
+            base_url, api_key, params,
+            timeout=kw.get("超时秒数", 900),
+            stream=kw.get("流式", False),
+            partial_images=kw.get("流式预览数", 2),
+        )
         return (img,)
 
 
@@ -110,6 +118,10 @@ class GPTImageEdit:
             moderation=kw.get("审核级别", "default"),
             input_fidelity=kw.get("精细度", "default"),
         )
-        img = api_client.edit_images(base_url, api_key, params, ref_pngs, mask_png,
-                                     timeout=kw.get("超时秒数", 300))
+        img = api_client.edit_images(
+            base_url, api_key, params, ref_pngs, mask_png,
+            timeout=kw.get("超时秒数", 900),
+            stream=kw.get("流式", False),
+            partial_images=kw.get("流式预览数", 2),
+        )
         return (img,)
