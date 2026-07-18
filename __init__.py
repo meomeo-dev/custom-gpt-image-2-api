@@ -1,17 +1,16 @@
 from .config_node import ImageAPIConfig
-from .nodes_gpt_image2 import GPTImage2Node
-from .nodes_nano_banana import NanoBananaNode
+from .nodes_gpt_image import GPTImageGenerate, GPTImageEdit
 
 NODE_CLASS_MAPPINGS = {
     "ImageAPIConfig": ImageAPIConfig,
-    "GPTImage2Node": GPTImage2Node,
-    "NanoBananaNode": NanoBananaNode,
+    "GPTImageGenerate": GPTImageGenerate,
+    "GPTImageEdit": GPTImageEdit,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ImageAPIConfig": "图像 API 配置 (base_url + api_key)",
-    "GPTImage2Node": "GPT-Image-2",
-    "NanoBananaNode": "Nano-Banana",
+    "ImageAPIConfig": "GPT-Image API 配置 (base_url + api_key)",
+    "GPTImageGenerate": "GPT-Image 生成 (文生图)",
+    "GPTImageEdit": "GPT-Image 编辑 (图生图)",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

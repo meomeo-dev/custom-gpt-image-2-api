@@ -1,0 +1,115 @@
+# -*- coding: utf-8 -*-
+"""GPT-Image 节点：通过用户自定义的 OpenAI 兼容接口生图。
+
+两个端点各一个节点，端点由「你选哪个节点」显式决定：
+  - GPT-Image 生成 (Generate) -> POST {base}/images/generations (文生图)
+  - GPT-Image 编辑 (Edit)     -> POST {base}/images/edits        (图生图/多参考图)
+
+接口地址与密钥来自「GPT-Image API 配置」节点，本文件不含任何预设网关。
+"""
+from . import api_client
+
+_CAT = "GPT-Image"
+
+
+def _common_optional():
+    """两个节点共有的可选参数（枚举默认 default = 不发送，用服务端默认）。"""
+    return {
+        "数量": ("INT", {"default": 1, "min": 1, "max": 10, "step": 1}),
+        "质量": (api_client.QUALITY_OPTIONS, {"default": "default"}),
+        "背景": (api_client.BACKGROUND_OPTIONS, {"default": "default"}),
+        "输出格式": (api_client.OUTPUT_FORMAT_OPTIONS, {"default": "default"}),
+        "压缩质量": ("INT", {"default": 100, "min": 0, "max": 100, "step": 1}),
+        "审核级别": (api_client.MODERATION_OPTIONS, {"default": "default"}),
+        "超时秒数": ("INT", {"default": 300, "min": 30, "max": 1800, "step": 10}),
+    }
+
+
+class GPTImageGenerate:
+    """GPT-Image 文生图 (/images/generations)。"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "配置": ("IMAGE_API_CONFIG",),
+                "提示词": ("STRING", {"default": "", "multiline": True}),
+                "模型": ("STRING", {"default": "gpt-image-2"}),
+                # gpt-image-2 支持任意 宽x高（16 的倍数，1:3~3:1，≤3840x2160）；auto 自动。
+                "尺寸": ("STRING", {"default": "auto"}),
+            },
+            "optional": _common_optional(),
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("图像",)
+    FUNCTION = "generate"
+    CATEGORY = _CAT
+
+    def generate(self, **kw):
+        base_url, api_key = api_client.unpack_config(kw.get("配置"))
+        params = api_client.build_params(
+            model=kw.get("模型", "gpt-image-2"),
+            prompt=kw.get("提示词", ""),
+            size=kw.get("尺寸", "auto"),
+            n=kw.get("数量", 1),
+            quality=kw.get("质量", "default"),
+            background=kw.get("背景", "default"),
+            output_format=kw.get("输出格式", "default"),
+            output_compression=kw.get("压缩质量"),
+            moderation=kw.get("审核级别", "default"),
+        )
+        img = api_client.generate_images(base_url, api_key, params,
+                                         timeout=kw.get("超时秒数", 300))
+        return (img,)
+
+
+class GPTImageEdit:
+    """GPT-Image 图生图/多参考图 (/images/edits)，最多 8 张参考图 + 可选遮罩。"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        opt = {}
+        for i in range(2, 9):  # 图片1 为必填，图片2~8 可选
+            opt["图片%d" % i] = ("IMAGE",)
+        opt["遮罩"] = ("MASK",)  # 可选；透明(选中)区域会被编辑
+        opt["精细度"] = (api_client.INPUT_FIDELITY_OPTIONS, {"default": "default"})
+        opt.update(_common_optional())
+        return {
+            "required": {
+                "配置": ("IMAGE_API_CONFIG",),
+                "提示词": ("STRING", {"default": "", "multiline": True}),
+                "模型": ("STRING", {"default": "gpt-image-2"}),
+                # edits 端支持 auto/1024x1024/1536x1024/1024x1536（取值以服务端为准）。
+                "尺寸": ("STRING", {"default": "auto"}),
+                "图片1": ("IMAGE",),
+            },
+            "optional": opt,
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("图像",)
+    FUNCTION = "edit"
+    CATEGORY = _CAT
+
+    def edit(self, **kw):
+        base_url, api_key = api_client.unpack_config(kw.get("配置"))
+        refs = [kw.get("图片%d" % i) for i in range(1, 9)]
+        ref_pngs = api_client.collect_ref_pngs(refs)
+        mask = kw.get("遮罩")
+        mask_png = api_client.mask_to_png_bytes(mask) if mask is not None else None
+        params = api_client.build_params(
+            model=kw.get("模型", "gpt-image-2"),
+            prompt=kw.get("提示词", ""),
+            size=kw.get("尺寸", "auto"),
+            n=kw.get("数量", 1),
+            quality=kw.get("质量", "default"),
+            background=kw.get("背景", "default"),
+            output_format=kw.get("输出格式", "default"),
+            output_compression=kw.get("压缩质量"),
+            moderation=kw.get("审核级别", "default"),
+            input_fidelity=kw.get("精细度", "default"),
+        )
+        img = api_client.edit_images(base_url, api_key, params, ref_pngs, mask_png,
+                                     timeout=kw.get("超时秒数", 300))
+        return (img,)

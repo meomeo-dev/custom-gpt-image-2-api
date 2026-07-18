@@ -10,7 +10,7 @@
 
 
 class ImageAPIConfig:
-    """图像 API 配置：自定义 base_url + api_key。"""
+    """GPT-Image API 配置：自定义 base_url + api_key。"""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -33,16 +33,16 @@ class ImageAPIConfig:
     RETURN_TYPES = ("IMAGE_API_CONFIG",)
     RETURN_NAMES = ("配置",)
     FUNCTION = "build"
-    CATEGORY = "Nano-Banana / GPT-Image"
+    CATEGORY = "GPT-Image"
 
     def build(self, **kw):
         base_url = (kw.get("接口地址") or "").strip().rstrip("/")
         api_key = (kw.get("密钥") or "").strip()
         if not base_url:
-            raise ValueError("[ImageAPI] 接口地址(base_url) 不能为空，请填写你自己的 API 地址，"
+            raise ValueError("[GPT-Image] 接口地址(base_url) 不能为空，请填写你自己的 API 地址，"
                              "例如 https://your-endpoint.example.com/v1")
         if not (base_url.startswith("http://") or base_url.startswith("https://")):
-            raise ValueError("[ImageAPI] 接口地址必须以 http:// 或 https:// 开头。")
+            raise ValueError("[GPT-Image] 接口地址必须以 http:// 或 https:// 开头。")
         if not api_key:
-            raise ValueError("[ImageAPI] 密钥(api_key) 不能为空。")
+            raise ValueError("[GPT-Image] 密钥(api_key) 不能为空。")
         return ((base_url, api_key),)

@@ -78,7 +78,7 @@ __all__ = ["NODE_CLASS_MAPPINGS", "WEB_DIRECTORY"]
 
 JS 侧用 `app.registerExtension({...})` 注册；后端可通过 `PromptServer.instance.send_sync(type, payload)` 向前端推消息，前端用 `app.api.addEventListener` 监听、从 `event.detail` 读取。
 
-> 本插件 2.0 起不再需要前端 JS（旧版用于过滤 nano-banana 的比例下拉，现已移除），故未导出 `WEB_DIRECTORY`。
+> 本插件不需要前端 JS，故未导出 `WEB_DIRECTORY`。
 
 ## 7. 打包与发布（pyproject.toml）
 
@@ -104,7 +104,7 @@ DisplayName = "..."
 
 | 规范点 | 本插件实现 |
 |--------|-----------|
-| 注册 | `__init__.py` 注册 `ImageAPIConfig` / `GPTImage2Node` / `NanoBananaNode` |
+| 注册 | `__init__.py` 注册 `ImageAPIConfig` / `GPTImageGenerate` / `GPTImageEdit` |
 | 自定义类型 | `IMAGE_API_CONFIG = (base_url, api_key)` |
 | 四个必需属性 | 各节点均有 `INPUT_TYPES` / `RETURN_TYPES` / `FUNCTION` / `CATEGORY` |
 | IMAGE 处理 | `api_client.py` 里 `tensor_to_png_bytes` / `bytes_to_tensor` 处理 `[B,H,W,C]` |
