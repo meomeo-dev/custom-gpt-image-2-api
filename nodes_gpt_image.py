@@ -19,7 +19,11 @@ def _common_optional():
         "质量": (api_client.QUALITY_OPTIONS, {"default": "default"}),
         "背景": (api_client.BACKGROUND_OPTIONS, {"default": "default"}),
         "输出格式": (api_client.OUTPUT_FORMAT_OPTIONS, {"default": "default"}),
-        "压缩质量": ("INT", {"default": 100, "min": 0, "max": 100, "step": 1}),
+        "压缩质量": ("INT", {"default": 100, "min": 0, "max": 100, "step": 1,
+                          "tooltip": "仅对「输出格式」为 jpeg/webp 生效（png/default 会忽略）。"
+                                     "数值=保留的画质百分比：越高画质越好、文件越大；越低压缩越强、"
+                                     "文件越小、画质越差。默认 100=最高画质。注意它只影响文件编码，"
+                                     "不影响生成画面（画面质量由「质量」控制）。"}),
         "审核级别": (api_client.MODERATION_OPTIONS, {"default": "default"}),
         # 长耗时保活：开启流式后服务端分批推送 SSE 事件，避免中间代理空闲超时切断连接。
         "流式": ("BOOLEAN", {"default": False}),
