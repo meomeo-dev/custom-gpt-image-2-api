@@ -27,6 +27,7 @@ import base64
 import io
 import json
 import socket
+import threading
 import time
 
 import numpy as np
@@ -73,6 +74,16 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 # 单次退避封顶(秒)，避免 Retry-After 过大时无谓长睡。
 MAX_BACKOFF = 60.0
 
+# ComfyUI 中断机制 (interrupt)：懒加载，在 ComfyUI 外(单测/test_api 等独立运行)
+# 时 ImportError 降级为 None，_check_interrupt() 变成 no-op，不影响独立调用。
+# ComfyUI 的中断是协作式轮询：节点必须主动调用
+# comfy.model_management.throw_exception_if_processing_interrupted() 才能响应
+# 用户点击 Cancel；单次阻塞的 requests.post() 无法被打断，需靠 daemon 线程 + 轮询。
+try:
+    import comfy.model_management as _comfy_mm
+except ImportError:
+    _comfy_mm = None
+
 _SESSION = None
 
 
@@ -102,6 +113,54 @@ def _session():
     sess.mount("https://", adapter)
     _SESSION = sess
     return _SESSION
+
+
+def _check_interrupt():
+    """若 ComfyUI 已发出取消信号则抛出 InterruptProcessingException；独立运行时 no-op。
+
+    InterruptProcessingException 继承 BaseException（不是 Exception），可穿透
+    调用链上所有的 except Exception 块，确保信号沿栈向上传播到 ComfyUI 执行器。
+    永远不要在自定义节点中 catch BaseException / InterruptProcessingException。
+    """
+    if _comfy_mm is not None:
+        _comfy_mm.throw_exception_if_processing_interrupted()
+
+
+def _interruptible_post(url, *, headers, timeout, stream, **req_kw):
+    """把 requests.post 放进 daemon 线程，主线程每 500ms 轮询 ComfyUI 中断标志。
+
+    根因：ComfyUI 使用「协作式轮询 (cooperative polling)」中断机制——节点须主动
+    调用 throw_exception_if_processing_interrupted() 才能响应 Cancel。单次阻塞的
+    requests.post() 将线程挂在 OS 网络层，期间无任何 Python 代码执行，中断标志
+    永远无法被读到。对十几分钟的生图任务来说形同虚设。
+
+    修复方案：daemon 线程做 HTTP，主线程每 500ms 轮询一次中断标志。
+    中断时 InterruptProcessingException(BaseException) 立即沿栈向上传播；
+    daemon 线程继续在后台完成（或等待超时），不阻止 ComfyUI 继续运行。
+    caller 的 except requests.RequestException 不会误捕获 BaseException 子类。
+    """
+    result = [None]
+    error = [None]
+    done = threading.Event()
+
+    def _worker():
+        try:
+            result[0] = _session().post(
+                url, headers=headers,
+                timeout=(CONNECT_TIMEOUT, timeout), stream=stream, **req_kw)
+        except Exception as exc:
+            error[0] = exc
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    while not done.wait(timeout=0.5):
+        _check_interrupt()   # 每 500ms 检查一次；中断时立即抛 InterruptProcessingException
+    _check_interrupt()       # 线程结束后再检查一次（done.set 前中断信号可能刚到）
+    if error[0] is not None:
+        raise error[0]
+    return result[0]
 
 
 def tensor_to_png_bytes(image_tensor):
@@ -370,6 +429,7 @@ def _images_from_stream(resp):
     final_b64 = None
     last_partial = None
     for raw in resp.iter_lines(decode_unicode=True):
+        _check_interrupt()   # SSE 流式迭代间隙检查中断，比单次阻塞更及时
         if not raw:
             continue
         line = raw.strip()
@@ -435,8 +495,8 @@ def _post_with_retry(url, *, headers, timeout, stream, attempts, label, **req_kw
     last_err = None
     for attempt in range(1, attempts + 1):
         try:
-            r = _session().post(url, headers=headers,
-                                timeout=(CONNECT_TIMEOUT, timeout), stream=stream, **req_kw)
+            r = _interruptible_post(url, headers=headers,
+                                    timeout=timeout, stream=stream, **req_kw)
         except requests.RequestException as e:
             last_err = e
             if attempt >= attempts:

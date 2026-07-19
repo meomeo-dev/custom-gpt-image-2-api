@@ -94,7 +94,31 @@
 
 > 端到端每层读超时都要 ≥ 生图时长。你能控本插件与自建网关;中间第三方 LB/nginx(`proxy_read_timeout` 等)不够大时,只有流式能保住连接。流式模式下多张(n>1)一般只回最终一张。
 
-## 6. 迁移说明
+## 6. 中断、缓存与多工作流隔离
+
+### 6.1 可中断(点 Cancel 能停)
+
+ComfyUI 的中断是**协作式轮询 (cooperative polling)**:点 Cancel 只是把一个全局标志置真,节点必须**主动调用** `comfy.model_management.throw_exception_if_processing_interrupted()` 才会停下。单次阻塞的 `requests.post()` 会把线程挂在 OS 网络层、期间无任何 Python 代码执行,标志读不到——所以早期版本点了 Cancel 也要死等请求返回(对十几分钟的生图形同无法停止)。
+
+现在的做法:把 HTTP 请求放进 **daemon 线程**,主线程**每 500ms 轮询一次**中断标志;流式模式则在每次 SSE 迭代间隙检查。中断时立即抛 `InterruptProcessingException`(它继承 `BaseException`,能穿透 `except Exception`,不会被重试逻辑误吞)。在 ComfyUI 外独立运行(`test_api.py` / 单测)时,`comfy` 模块不可用,自动降级为 no-op。
+
+### 6.2 每次都真正调用 API(禁用输出缓存)
+
+两个生图节点定义了 `IS_CHANGED` 恒返回 `float("nan")`。ComfyUI 默认按输入哈希缓存节点输出——相同 prompt/参数再次运行会**直接复用上次的图、根本不发请求**。但 API 生图是不确定的(同 prompt 每次结果不同),故本插件**禁用该缓存**,保证每次都真正向服务端请求、各自算各自的图。配置节点与尺寸规范化节点是纯确定性的,不加此项。
+
+### 6.3 ⚠️ 多工作流「节点 id 碰撞」显示串台(ComfyUI 自身限制,非本插件可修)
+
+**现象**:同一个 ComfyUI 服务上开两个工作流 A、B,生成/编辑节点的输出会互相覆盖——谁最后生成,两个工作流都显示谁的图。
+
+**根因**(已核对 ComfyUI 源码):ComfyUI 全进程共享**唯一**的输出缓存 `caches.outputs`,以节点 `unique_id`(工作流 JSON 里的节点 id)为键、**不按工作流/标签分区**;前端也按 node id 认领预览图。而 litegraph 的节点 id 在单个图内从 1,2,3… 递增,两个各自新建(或"另存为"复制)的工作流**天然含相同 id**,于是在同一个缓存槽位上互相覆盖。对应上游 issue:[comfyanonymous/ComfyUI#6581](https://github.com/comfyanonymous/ComfyUI/issues/6581)。
+
+**这不是本插件能在自身代码修掉的**——任何节点(含内置 `SaveImage`/`PreviewImage`)在 id 碰撞下都一样。`IS_CHANGED`(见 6.2)能保证两个工作流**确实各自发了请求**,但消除不了 ComfyUI 层面的显示串台。
+
+**规避**:① 让两个工作流的节点 id 不重叠(**重建**其一,别用"另存为"复制;或前端手动改 id);② 一次只跑一个工作流,或把任务放进同一标签的队列串行跑;③ 最稳:开两个 ComfyUI 实例(不同 `--port`),缓存与队列各自独立。
+
+**自查是否 id 碰撞**:导出两个工作流 `.json`,搜出问题节点的 `"id"` 字段,若相同即实锤;或只开一个工作流跑,现象消失即可佐证。
+
+## 7. 迁移说明
 
 ### 从最初的 nerapi.com 版本
 | 旧 | 现在 |
@@ -106,6 +130,6 @@
 - 旧的单个「GPT-Image-2」节点靠"有没有连参考图"自动切换端点;3.0 拆成 **GPT-Image 生成** 与 **GPT-Image 编辑** 两个节点,端点显式可选。
 - 打开旧工作流后:按需替换为对应节点,重新连「配置」,并设置新增的 `quality/background/output_format/...` 等参数(留 `default` 即保持旧行为)。
 
-## 7. 命令行自测
+## 8. 命令行自测
 
 见 `test_api.py`(`--base` 与 `--key` 必填,无预设地址),支持 `--image`(可重复)、`--mask`、`--quality`、`--background`、`--output-format` 等,先验证服务端连通性再进 ComfyUI。

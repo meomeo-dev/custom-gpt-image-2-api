@@ -12,6 +12,19 @@ from . import api_client
 _CAT = "GPT-Image"
 
 
+def _always_run(*args, **kwargs):
+    """IS_CHANGED 恒返回 NaN，强制 ComfyUI 每次都真正执行本节点。
+
+    ComfyUI 默认按输入哈希缓存节点输出：相同 prompt/参数再次运行会直接复用上次的
+    图、根本不调用 API。但 API 生图本质是不确定的（同一 prompt 每次结果不同），
+    且多个工作流并存时不应彼此复用缓存。返回 float("NaN") 使缓存判定恒不相等，
+    保证每次都真正向服务端发请求、各自算各自的图。
+    注意：这不能消除 ComfyUI 跨工作流「节点 id 碰撞」导致的预览串台（那是 ComfyUI
+    自身按 unique_id 全局缓存/路由的限制，见 docs），只保证本节点确实各自执行。
+    """
+    return float("nan")
+
+
 def _common_optional():
     """两个节点共有的可选参数（枚举默认 default = 不发送，用服务端默认）。"""
     return {
@@ -60,6 +73,7 @@ class GPTImageGenerate:
     RETURN_NAMES = ("图像",)
     FUNCTION = "generate"
     CATEGORY = _CAT
+    IS_CHANGED = staticmethod(_always_run)  # API 生图不确定，禁用输出缓存
 
     def generate(self, **kw):
         base_url, api_key = api_client.unpack_config(kw.get("配置"))
@@ -117,6 +131,7 @@ class GPTImageEdit:
     RETURN_NAMES = ("图像",)
     FUNCTION = "edit"
     CATEGORY = _CAT
+    IS_CHANGED = staticmethod(_always_run)  # API 生图不确定，禁用输出缓存
 
     def edit(self, **kw):
         base_url, api_key = api_client.unpack_config(kw.get("配置"))

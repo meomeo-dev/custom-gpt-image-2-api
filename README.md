@@ -90,6 +90,12 @@ cd custom-gpt-image-2-api && pip install -r requirements.txt
 
 > 端到端每一层的读超时都要 ≥ 生图时长:你能控的是本插件和你的网关;若中间还有别人的 LB/nginx(如 `proxy_read_timeout`),它们不够大时只有流式能救。
 
+## 可中断 / 不缓存 / 多工作流隔离
+
+- **点 Cancel 能停**:HTTP 请求放在后台线程,主线程每 500ms 轮询 ComfyUI 中断标志;生图中途点取消可及时停止(早期阻塞版本停不下来)。
+- **每次都真正生图**:两个生图节点用 `IS_CHANGED=NaN` 禁用 ComfyUI 输出缓存——相同 prompt 不会复用上次的图,始终重新请求 API(生图是不确定的)。
+- **⚠️ 同服务多工作流会显示串台**:两个工作流若含**相同节点 id**(常见于"另存为"复制),ComfyUI 会因按 node id 全局缓存/路由而让它们互相覆盖显示(谁最后生成两边都变谁的)。这是 [ComfyUI 自身限制 #6581](https://github.com/comfyanonymous/ComfyUI/issues/6581),非本插件可修。规避:重建其一让 id 不重叠、串行跑、或开两个 ComfyUI 实例(不同 `--port`)。详见 [`docs/usage-and-security.md`](docs/usage-and-security.md) 第 6 节。
+
 ## 图生图 / 多参考图如何工作
 
 编辑节点把参考图直接作为 multipart 的 `image[]` 文件 **POST 到 `{base_url}/images/edits`**,不经过任何第三方图床、不做 base64 中转。GPT image 系列最多支持 16 张,本节点开放 8 个输入口。连了「遮罩」时会作为 `mask` 文件一并发送。
