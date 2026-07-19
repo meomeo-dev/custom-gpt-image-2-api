@@ -91,6 +91,18 @@ def main():
     assert ac.size_from_wh(0, 0) == "auto"
     assert ac.size_from_wh(1024, 1536) == "1024x1536"
 
+    # ── snap_dim：圆整到 step 倍数 + clamp 到 [lo,hi]（尺寸规范化节点用）──
+    assert ac.snap_dim(1000, 16, 16, 3840) == 1008      # 最近 16 倍数
+    assert ac.snap_dim(1020, 16, 16, 3840) == 1024
+    assert ac.snap_dim(24, 16, 16, 3840) == 32          # 逢中向上
+    assert ac.snap_dim(5, 16, 16, 3840) == 16           # 圆整得 0，被 lo 抬到 16
+    assert ac.snap_dim(5000, 16, 16, 3840) == 3840      # 被 hi 压回
+    assert ac.snap_dim(0, 16, 20, 3840) == 32           # lo=20 向上对齐到 32
+    assert ac.snap_dim(9999, 16, 16, 3850) == 3840      # hi=3850 向下对齐到 3840
+    assert ac.snap_dim(9999) == ac.GPT_IMAGE_2_MAX_EDGE  # hi 缺省=3840
+    assert ac.snap_dim(1000, 8) == 1000                 # step=8：1000 已是 8 倍数
+    assert ac.snap_dim(1000, 32, 16, 3840) == 992       # step=32：(1000+16)//32*32
+
     print("ALL PASS")
 
 

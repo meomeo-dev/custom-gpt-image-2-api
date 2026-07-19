@@ -7,8 +7,11 @@
 | GPT-Image API 配置 (base_url + api_key) | `ImageAPIConfig` | — | 输出 `IMAGE_API_CONFIG`,即 `(base_url, api_key)` |
 | GPT-Image 生成 (文生图) | `GPTImageGenerate` | `POST /images/generations` | 纯文本生图 |
 | GPT-Image 编辑 (图生图) | `GPTImageEdit` | `POST /images/edits` | 1~8 张参考图 + 可选遮罩 |
+| GPT-Image 尺寸规范化 (16倍数/边长) | `GPTImageSizeSnap` | — | 宽/高圆整到步长(默认16)倍数并 clamp 到 [最小边,最大边],输出 `宽`/`高` 两个 INT |
 
 连线:`GPT-Image API 配置` 的「配置」输出 → 生成/编辑节点的「配置」输入。一个配置节点可以连多个节点。**端点由你选哪个节点决定**,不再靠有无参考图隐式判断。
+
+**尺寸规范化节点用法**:把 `GPTImageSizeSnap` 的 `宽`/`高` 输出连到生成/编辑节点的「宽/高」输入(在生成/编辑节点上右键把「宽」「高」widget 转为 input 接口即可)。它只处理「步长倍数 + 边长范围」,把用户随手填的值吸附成合法尺寸;比例(1:3~3:1)与总像素范围仍由发请求前的 `_validate` 校验。核心逻辑见 `api_client.snap_dim`。
 
 ## 2. 请求如何构造(OpenAI Images API)
 

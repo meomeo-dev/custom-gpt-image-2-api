@@ -176,6 +176,25 @@ def size_from_wh(width, height):
     return "%dx%d" % (w, h)
 
 
+def snap_dim(value, step=16, lo=16, hi=None):
+    """把单条边 value 规范化：圆整到最近的 step 倍数，并 clamp 到 [lo, hi]。
+
+    端点也对齐到 step 倍数（lo 向上取、hi 向下取），保证结果既是 step 的倍数、
+    又落在 [lo, hi] 内。hi 缺省用 gpt-image-2 的最长边 3840。
+    供「尺寸规范化」节点把用户随手填的宽/高吸附成合法值；比例(1:3~3:1)与
+    总像素约束不在这里处理，仍由 _validate 在发请求前校验。
+    """
+    step = max(1, int(step))
+    if hi is None:
+        hi = GPT_IMAGE_2_MAX_EDGE
+    v = (int(round(value)) + step // 2) // step * step   # 逢中向上圆整到 step 倍数
+    lo_s = -(-int(lo) // step) * step                    # ceil(lo/step)*step
+    hi_s = int(hi) // step * step                        # floor(hi/step)*step
+    if hi_s < lo_s:                                      # 参数打架时以下限为准
+        hi_s = lo_s
+    return max(lo_s, min(v, hi_s))
+
+
 def unpack_config(config):
     """从配置节点的输出里取出 (base_url, api_key)。"""
     if not config or not isinstance(config, (tuple, list)) or len(config) < 2:

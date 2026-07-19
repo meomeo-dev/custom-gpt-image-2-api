@@ -2,13 +2,14 @@
 
 在 ComfyUI 里用 **GPT-Image**(`gpt-image-2` 等 OpenAI 兼容图像模型)做**文生图**与**图生图/多参考图编辑**。请求走**你自己配置的 OpenAI 兼容接口**(自定义 `base_url` + `api_key`),插件本身不含任何预设网关。
 
-## 三个节点(分类 `GPT-Image`)
+## 四个节点(分类 `GPT-Image`)
 
 | 显示名 | 内部 key | 端点 | 作用 |
 |--------|----------|------|------|
 | GPT-Image API 配置 (base_url + api_key) | `ImageAPIConfig` | — | 输出 `IMAGE_API_CONFIG`,即 `(base_url, api_key)`,可复用到多个节点 |
 | GPT-Image 生成 (文生图) | `GPTImageGenerate` | `POST /images/generations` | 纯文本生图 |
 | GPT-Image 编辑 (图生图) | `GPTImageEdit` | `POST /images/edits` | 带 1~8 张参考图 + 可选遮罩的编辑 |
+| GPT-Image 尺寸规范化 (16倍数/边长) | `GPTImageSizeSnap` | — | 把随手填的宽/高圆整到 16 倍数并限制边长范围,输出 `宽`/`高` 两个 INT |
 
 端点由**你选哪个节点**显式决定,不再靠"有没有连参考图"隐式判断。
 
