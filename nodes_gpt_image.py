@@ -30,6 +30,11 @@ def _common_optional():
         "流式预览数": ("INT", {"default": 2, "min": 0, "max": 3, "step": 1}),
         # 读取超时；生图可能十几分钟，默认 900s(15min)、上限 3600s(60min)。
         "超时秒数": ("INT", {"default": 900, "min": 30, "max": 3600, "step": 30}),
+        # 瞬时错误(限流 429 / 5xx / 超时 / 连接重置)自动重试次数；0=关闭。
+        # 优先按服务端 Retry-After 等待，否则指数退避(封顶 60s)。
+        "重试次数": ("INT", {"default": 2, "min": 0, "max": 5, "step": 1,
+                          "tooltip": "遇到 429/5xx/超时/连接重置时的最大重试次数。"
+                                     "0=不重试。总请求次数 = 重试次数 + 1。"}),
     }
 
 
@@ -74,6 +79,7 @@ class GPTImageGenerate:
             timeout=kw.get("超时秒数", 900),
             stream=kw.get("流式", False),
             partial_images=kw.get("流式预览数", 2),
+            attempts=int(kw.get("重试次数", 2)) + 1,
         )
         return (img,)
 
@@ -87,6 +93,12 @@ class GPTImageEdit:
         for i in range(2, 9):  # 图片1 为必填，图片2~8 可选
             opt["图片%d" % i] = ("IMAGE",)
         opt["遮罩"] = ("MASK",)  # 可选；透明(选中)区域会被编辑
+        # 输入保真度：仅编辑端点(/images/edits)有意义。gpt-image-2 恒为高保真、
+        # 不接受该字段，选了会被自动忽略；gpt-image-1.5/1/1-mini 才实际生效。
+        opt["输入保真度"] = (api_client.INPUT_FIDELITY_OPTIONS, {
+            "default": "default",
+            "tooltip": "参考图的保真度：high 更贴近原图细节，low 更自由。"
+                       "default=不发送(服务端默认)。gpt-image-2 会忽略此项(始终 high)。"})
         opt.update(_common_optional())
         return {
             "required": {
@@ -122,11 +134,13 @@ class GPTImageEdit:
             output_format=kw.get("输出格式", "default"),
             output_compression=kw.get("压缩质量"),
             moderation=kw.get("审核级别", "default"),
+            input_fidelity=kw.get("输入保真度", "default"),
         )
         img = api_client.edit_images(
             base_url, api_key, params, ref_pngs, mask_png,
             timeout=kw.get("超时秒数", 900),
             stream=kw.get("流式", False),
             partial_images=kw.get("流式预览数", 2),
+            attempts=int(kw.get("重试次数", 2)) + 1,
         )
         return (img,)

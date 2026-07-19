@@ -35,6 +35,7 @@
 | 图片1 | `image[]` | — | ✅必填 | 第一张参考图 |
 | 图片2~8 | `image[]` | — | 可选 | 追加参考图(最多 8) |
 | 遮罩 | `mask` | — | 可选 | `MASK`;透明(选中)区域被编辑,alpha=(1-mask)*255 |
+| 输入保真度 | `input_fidelity` | — | 可选 | `default`/`low`/`high`;**仅编辑端点**。`gpt-image-2` 忽略(恒为 high),`gpt-image-1.x` 生效 |
 | 数量 | `n` | ✅ | ✅ | 1~10,默认 1 |
 | 质量 | `quality` | ✅ | ✅ | `default`/`auto`/`high`/`medium`/`low` |
 | 背景 | `background` | ✅ | ✅ | `default`/`auto`/`transparent`/`opaque` |
@@ -44,8 +45,21 @@
 | 流式 | `stream` | ✅ | ✅ | 布尔,默认关;长耗时开启保活(见第 5 节) |
 | 流式预览数 | `partial_images` | ✅ | ✅ | 0~3,默认 2;流式时中途预览张数 |
 | 超时秒数 | (读取超时) | ✅ | ✅ | 默认 900(15min),上限 3600;采用 (连接15s, 读取N秒) 元组 |
+| 重试次数 | (客户端重试) | ✅ | ✅ | 0~5,默认 2;瞬时错误(429/5xx/超时/连接重置)自动重试(见第 5 节) |
 
-> **`default` 档 = 不发送该字段**,让服务端用其默认值。这样面对不支持某字段的 OpenAI 兼容网关时不会因未知参数报 400。`output_compression` 还额外要求 `output_format` 为 jpeg/webp 才发送。`stream`/`partial_images` 仅在勾选「流式」时才发送。
+> **`default` 档 = 不发送该字段**,让服务端用其默认值。这样面对不支持某字段的 OpenAI 兼容网关时不会因未知参数报 400。`output_compression` 还额外要求 `output_format` 为 jpeg/webp 才发送。`stream`/`partial_images` 仅在勾选「流式」时才发送。`input_fidelity` 仅编辑端点发送。
+
+### 参数×模型联动校验(发请求前)
+
+节点在发请求前按「模型」校验参数组合(单一入口 `api_client._validate`),尽早以明确中文提示拦截会被服务端拒绝的组合,省一次昂贵/缓慢的 API 往返。策略是**已知官方模型硬校验、未知网关软放行**:
+
+| 模型 | size 约束 | transparent | input_fidelity |
+|------|-----------|-------------|----------------|
+| `gpt-image-2` | 16 倍数、比例 ≤3:1、最长边 ≤3840、总像素 655360~8294400 | ❌ 不支持(提示改 1.5) | ❌ 忽略(恒 high) |
+| `gpt-image-1.5` / `gpt-image-1` / `gpt-image-1-mini` | `1024x1024`/`1536x1024`/`1024x1536`/`auto` | ✅ 需 png/webp | ✅ 生效 |
+| 其它(自定义网关模型名) | 仅 16 倍数软提示,不拦截 | 软放行(仅 +jpeg 因无透明通道仍拦截) | 原样发送 |
+
+> `transparent` + `jpeg` 是物理冲突(jpeg 无 alpha 通道),对任何模型都直接报错。校验只改 `input_fidelity`(遇不支持的模型丢弃)、不改其它字段。规则见 `api_client.py` 的 `MODEL_RULES`,新增模型只需在表里加一行。
 
 ### 结果读取
 
@@ -73,6 +87,7 @@
 1. **读取超时足够大**:节点「超时秒数」默认 900、上限 3600;`timeout=(15, N)`,连接 15s 快速失败、读取给足 N 秒。仅覆盖客户端自身。
 2. **流式(官方保活机制,推荐)**:勾选「流式」→ 发送 `stream=true` + `partial_images`,服务端通过 SSE 分批推 `*.partial_image` 事件、最后 `*.completed` 带完整图。连接持续有数据流动,可越过中间代理的 idle timeout。插件解析:遍历 `data:` 行 JSON,按 `type` 取 `completed` 的 `b64_json`(取不到则用最后一个 partial 兜底)。**若响应 Content-Type 不是 `text/event-stream`(网关没按流式返回),自动回退普通 JSON 解析**,不会因开了流式而失败。
 3. **TCP keepalive**:共享 `requests.Session` 上启用 `SO_KEEPALIVE`(+ 平台相关 `TCP_KEEPIDLE/INTVL/CNT`),维持 NAT/防火墙映射。对 L7 负载均衡的应用层 idle timeout 无效。
+4. **瞬时错误重试(重试次数)**:遇 429/5xx/超时/连接重置时自动重试,**优先按服务端 `Retry-After` 头等待**,否则指数退避(`2^n` 秒,封顶 60s)。默认重试 2 次(总 3 次),0 关闭。**只重试「请求建立 + 首个状态码」阶段**——流式一旦开始迭代 SSE 就不再重试,避免半消费的流被重放;参考图以 bytes 传入,可安全跨重试重发。它兜的是"临时抖动",非法参数(400)不会重试。
 
 > 端到端每层读超时都要 ≥ 生图时长。你能控本插件与自建网关;中间第三方 LB/nginx(`proxy_read_timeout` 等)不够大时,只有流式能保住连接。流式模式下多张(n>1)一般只回最终一张。
 

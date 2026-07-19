@@ -52,6 +52,7 @@ cd custom-gpt-image-2-api && pip install -r requirements.txt
 | 图片1 | — | ✅ 必填 | 第一张参考图 |
 | 图片2~8 | — | 可选 | 追加参考图(共最多 8 张) |
 | 遮罩 mask | — | 可选 | `MASK` 输入;透明(选中)区域会被编辑 |
+| 输入保真度 input_fidelity | — | 可选 | `default`/`low`/`high`;参考图保真度。**仅编辑端点**,且 `gpt-image-2` 会忽略(恒为 high) |
 | 数量 n | ✅ | ✅ | 1~10,多张尺寸一致时合并为批次 |
 | 质量 quality | ✅ | ✅ | `default`/`auto`/`high`/`medium`/`low` |
 | 背景 background | ✅ | ✅ | `default`/`auto`/`transparent`/`opaque` |
@@ -61,8 +62,22 @@ cd custom-gpt-image-2-api && pip install -r requirements.txt
 | 流式 stream | ✅ | ✅ | 布尔,默认关;长耗时(如 10min)建议开启保活,见下节 |
 | 流式预览数 partial_images | ✅ | ✅ | 0~3,流式时中途推送的预览张数(越多越利于保活) |
 | 超时秒数 timeout | ✅ | ✅ | 读取超时,默认 900(15min),上限 3600(60min) |
+| 重试次数 | ✅ | ✅ | 0~5,默认 2;遇 429/5xx/超时/连接重置自动重试,见下节 |
 
 > 枚举参数选 `default` 时**不发送该字段**,由服务端用默认值——避免给不支持该字段的网关塞未知参数导致 400。
+
+### 参数×模型联动校验(发请求前,省一次昂贵往返)
+
+节点在**真正发请求前**按「模型」校验参数组合是否合法,发现问题给出明确中文提示:
+
+- **已知官方模型**(`gpt-image-2` / `gpt-image-1.5` / `gpt-image-1` / `gpt-image-1-mini`):**硬校验**,违规直接报错。
+  - `gpt-image-2` 尺寸须满足:16 的倍数、长短边比 ≤3:1、最长边 ≤3840、总像素 655360~8294400。
+  - `gpt-image-1.x` 尺寸限 `1024x1024 / 1536x1024 / 1024x1536 / auto`。
+  - `gpt-image-2` **不支持透明背景**(会提示改用 `gpt-image-1.5` + png/webp),也**不接受** `input_fidelity`(选了自动忽略)。
+  - `background=transparent` 与 `output_format=jpeg` 冲突(jpeg 无透明通道),直接报错。
+- **未知模型名**(你的自定义兼容网关):一律**软放行**,只打印警告不拦截,保住网关兼容性。
+
+> 联动全在执行期校验完成(节点本身不加复杂 UI),你无需背模型×参数兼容矩阵——配错时节点会告诉你哪个参数和哪个冲突、怎么改。
 
 ## 长耗时与保活(生图很慢时必看)
 

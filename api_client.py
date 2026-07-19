@@ -27,6 +27,7 @@ import base64
 import io
 import json
 import socket
+import time
 
 import numpy as np
 import requests
@@ -39,9 +40,38 @@ QUALITY_OPTIONS = ["default", "auto", "high", "medium", "low"]
 BACKGROUND_OPTIONS = ["default", "auto", "transparent", "opaque"]
 OUTPUT_FORMAT_OPTIONS = ["default", "png", "jpeg", "webp"]
 MODERATION_OPTIONS = ["default", "auto", "low"]
+# 输入保真度 (input_fidelity)：仅 /images/edits 有意义；default = 不发送。
+INPUT_FIDELITY_OPTIONS = ["default", "low", "high"]
 
 # 连接建立超时(秒)；读取超时由调用方按生图时长传入(可能很久)。
 CONNECT_TIMEOUT = 15
+
+# ── 模型能力表 (model capability table)：参数与模型的联动依据 ──────────────
+# 只有「已知官方模型」才做硬校验(违规直接报错、省一次昂贵/缓慢的 API 往返)；
+# 未知模型名(自定义 OpenAI 兼容网关)一律软放行(仅打印警告),以保住兼容性。
+# 规则来源：OpenAI Images API 对各 GPT-Image 模型的官方约束。
+#   size          -> "strict"：gpt-image-2 的严格尺寸约束；"legacy"：固定几档尺寸
+#   transparent   -> 是否支持透明背景 (background=transparent)
+#   input_fidelity-> 是否支持 input_fidelity 字段 (gpt-image-2 恒为 high，不接受该字段)
+MODEL_RULES = {
+    "gpt-image-2":      {"size": "strict", "transparent": False, "input_fidelity": False},
+    "gpt-image-1.5":    {"size": "legacy", "transparent": True,  "input_fidelity": True},
+    "gpt-image-1":      {"size": "legacy", "transparent": True,  "input_fidelity": True},
+    "gpt-image-1-mini": {"size": "legacy", "transparent": True,  "input_fidelity": True},
+}
+
+# gpt-image-2 尺寸约束 (与官方一致)。
+GPT_IMAGE_2_MIN_PIXELS = 655_360
+GPT_IMAGE_2_MAX_PIXELS = 8_294_400
+GPT_IMAGE_2_MAX_EDGE = 3840
+GPT_IMAGE_2_MAX_RATIO = 3.0
+# legacy 模型 (gpt-image-1.x) 只接受这几档 size。
+ALLOWED_LEGACY_SIZES = {"1024x1024", "1536x1024", "1024x1536", "auto"}
+
+# 可重试的 HTTP 状态码：限流 + 常见网关/上游临时故障。
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+# 单次退避封顶(秒)，避免 Retry-After 过大时无谓长睡。
+MAX_BACKOFF = 60.0
 
 _SESSION = None
 
@@ -133,8 +163,8 @@ def _auth_headers(api_key):
 def size_from_wh(width, height):
     """宽/高 -> OpenAI size 字符串。两者都 >0 时拼 "宽x高"，否则 "auto"。
 
-    不强制圆整用户填的值；只在非 16 倍数时给出提示（gpt-image-2 通常要求宽高
-    为 16 的倍数、1:3~3:1、≤3840x2160），最终由服务端校验。
+    不强制圆整用户填的值；尺寸合法性交给 build_params 里的 _validate 按模型判断
+    （已知模型硬校验、未知模型软警告），最终由服务端裁决。
     """
     try:
         w = int(width or 0)
@@ -143,8 +173,6 @@ def size_from_wh(width, height):
         return "auto"
     if w <= 0 or h <= 0:
         return "auto"
-    if w % 16 or h % 16:
-        print("[GPT-Image] 提示：gpt-image-2 通常要求宽高为 16 的倍数，当前 %dx%d 可能被拒。" % (w, h))
     return "%dx%d" % (w, h)
 
 
@@ -155,11 +183,100 @@ def unpack_config(config):
     return config[0], config[1]
 
 
+def _parse_size(size):
+    """"宽x高" -> (w, h)；不匹配返回 None（含 "auto"）。"""
+    s = _clean(size)
+    if not s or s == "auto":
+        return None
+    parts = s.lower().split("x")
+    if len(parts) != 2:
+        return "invalid"
+    try:
+        w, h = int(parts[0]), int(parts[1])
+    except ValueError:
+        return "invalid"
+    if w <= 0 or h <= 0:
+        return "invalid"
+    return (w, h)
+
+
+def _check_gpt_image_2_size(size, strict):
+    """gpt-image-2 尺寸约束校验。strict=True 时违规 raise，否则 print 警告。"""
+    parsed = _parse_size(size)
+    if parsed is None:  # auto / 未指定
+        return
+    fail = _die if strict else _warn
+    if parsed == "invalid":
+        fail("size 必须是 auto 或 宽x高（如 1024x1024），当前: %r" % size)
+        return
+    w, h = parsed
+    max_edge, min_edge = max(w, h), min(w, h)
+    total = w * h
+    if w % 16 or h % 16:
+        fail("gpt-image-2 要求宽高均为 16 的倍数，当前 %dx%d。" % (w, h))
+    elif max_edge > GPT_IMAGE_2_MAX_EDGE:
+        fail("gpt-image-2 最长边不得超过 %dpx，当前 %dpx。" % (GPT_IMAGE_2_MAX_EDGE, max_edge))
+    elif max_edge / min_edge > GPT_IMAGE_2_MAX_RATIO:
+        fail("gpt-image-2 长短边比不得超过 3:1，当前 %dx%d。" % (w, h))
+    elif total < GPT_IMAGE_2_MIN_PIXELS or total > GPT_IMAGE_2_MAX_PIXELS:
+        fail("gpt-image-2 总像素需在 %d~%d 之间，当前 %d。"
+             % (GPT_IMAGE_2_MIN_PIXELS, GPT_IMAGE_2_MAX_PIXELS, total))
+
+
+def _die(msg):
+    raise ValueError("[GPT-Image] " + msg)
+
+
+def _warn(msg):
+    print("[GPT-Image] 提示(自定义网关，仅警告不拦截)：" + msg)
+
+
+def _validate(params):
+    """参数×模型联动校验（单一入口）。已知官方模型硬校验、未知模型软警告。
+
+    会就地修改 params：对不支持 input_fidelity 的模型丢弃该字段（打印说明）。
+    """
+    model = params.get("model", "")
+    rule = MODEL_RULES.get(model)          # None = 未知模型/自定义网关
+    strict = rule is not None
+    size = params.get("size", "auto")
+    bg = params.get("background")
+    fmt = params.get("output_format")
+
+    # 1) 尺寸：按模型分流
+    if rule and rule["size"] == "strict":
+        _check_gpt_image_2_size(size, strict=True)
+    elif rule and rule["size"] == "legacy":
+        if _clean(size) and size not in ALLOWED_LEGACY_SIZES:
+            _die("%s 只支持 size ∈ {1024x1024, 1536x1024, 1024x1536, auto}，当前: %r" % (model, size))
+    else:
+        # 未知模型：只做轻量的 16 倍数软提示，不拦截（网关可能支持任意尺寸）。
+        parsed = _parse_size(size)
+        if isinstance(parsed, tuple) and (parsed[0] % 16 or parsed[1] % 16):
+            _warn("gpt-image 系列通常要求宽高为 16 的倍数，当前 %dx%d 可能被拒。" % parsed)
+
+    # 2) 透明背景联动
+    if bg == "transparent":
+        if fmt == "jpeg":
+            _die("透明背景(transparent) 需要 png/webp 输出，jpeg 无法保留透明通道。")
+        if rule and not rule["transparent"]:
+            _die("%s 不支持透明背景。请改用 --模型 gpt-image-1.5 并设 输出格式=png/webp。" % model)
+
+    # 3) input_fidelity 联动：模型不支持时丢弃（不报错，避免 edit 配置摩擦）
+    if params.get("input_fidelity") and rule and not rule["input_fidelity"]:
+        print("[GPT-Image] %s 忽略 input_fidelity（该模型输入始终高保真）。" % model)
+        params.pop("input_fidelity", None)
+
+    return params
+
+
 def build_params(model, prompt, size="auto", n=1, quality="default",
                  background="default", output_format="default",
-                 output_compression=None, moderation="default"):
+                 output_compression=None, moderation="default",
+                 input_fidelity="default"):
     """构造两个端点共用的参数字典。枚举取 "default" 时不发送该字段。
 
+    组装完成后调用 _validate 做参数×模型联动校验（单一校验入口）。
     返回的是「标准 python 值」的 dict：generations 直接当 JSON body；
     edits 会在 edit_images 里逐个转成字符串放进 multipart form。
     """
@@ -177,6 +294,7 @@ def build_params(model, prompt, size="auto", n=1, quality="default",
         ("background", background),
         ("output_format", output_format),
         ("moderation", moderation),
+        ("input_fidelity", input_fidelity),
     ):
         v = _clean(val)
         if v and v != "default":
@@ -191,7 +309,7 @@ def build_params(model, prompt, size="auto", n=1, quality="default",
         if c is not None and 0 <= c <= 100:
             params["output_compression"] = c
 
-    return params
+    return _validate(params)
 
 
 def _images_from_response(resp_json, timeout):
@@ -269,7 +387,71 @@ def _result_tensors(resp, timeout, stream):
     return _images_from_response(resp.json(), timeout)
 
 
-def generate_images(base_url, api_key, params, timeout=900, stream=False, partial_images=1):
+def _retry_after_seconds(resp):
+    """从响应的 Retry-After 头解析等待秒数；解析不出(如 HTTP-date)返回 None。"""
+    if resp is None:
+        return None
+    val = resp.headers.get("Retry-After")
+    if not val:
+        return None
+    try:
+        return max(0.0, float(val))
+    except (TypeError, ValueError):
+        return None
+
+
+def _backoff_seconds(attempt):
+    """指数退避：2^attempt 秒，封顶 MAX_BACKOFF。"""
+    return min(MAX_BACKOFF, 2.0 ** attempt)
+
+
+def _post_with_retry(url, *, headers, timeout, stream, attempts, label, **req_kw):
+    """POST + 对瞬时错误(429/5xx/超时/连接重置)指数退避重试。
+
+    只覆盖「请求建立 + 首个状态码」阶段；流式响应一旦在调用方开始迭代就不再重试，
+    避免半消费的流被重放。参考图以 bytes 传入(非文件句柄)，可安全跨重试重发。
+    返回 status==200 的 response，否则 raise RuntimeError。
+    """
+    attempts = max(1, int(attempts))
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        try:
+            r = _session().post(url, headers=headers,
+                                timeout=(CONNECT_TIMEOUT, timeout), stream=stream, **req_kw)
+        except requests.RequestException as e:
+            last_err = e
+            if attempt >= attempts:
+                raise RuntimeError("[GPT-Image] %s 请求失败: %s" % (label, e))
+            wait = _backoff_seconds(attempt)
+            print("[GPT-Image] %s 第 %d/%d 次请求异常(%s)，%.1fs 后重试。"
+                  % (label, attempt, attempts, e.__class__.__name__, wait))
+            time.sleep(wait)
+            continue
+
+        if r.status_code == 200:
+            return r
+
+        # 非 200：可重试状态码且还有次数 -> 退避重试(优先用服务端的 Retry-After)。
+        if attempt < attempts and r.status_code in RETRYABLE_STATUS:
+            wait = _retry_after_seconds(r)
+            if wait is None:
+                wait = _backoff_seconds(attempt)
+            wait = min(MAX_BACKOFF, wait)
+            print("[GPT-Image] %s 第 %d/%d 次返回 %s，%.1fs 后重试。"
+                  % (label, attempt, attempts, r.status_code, wait))
+            r.close()
+            time.sleep(wait)
+            continue
+
+        msg = "[GPT-Image] %s 失败 (%s): %s" % (label, r.status_code, r.text[:500])
+        r.close()
+        raise RuntimeError(msg)
+
+    raise RuntimeError("[GPT-Image] %s 请求失败: %s" % (label, last_err))
+
+
+def generate_images(base_url, api_key, params, timeout=900, stream=False,
+                    partial_images=1, attempts=1):
     """POST {base}/images/generations (JSON)。返回 IMAGE tensor [N,H,W,3]。"""
     base = _normalize_base_url(base_url)
     headers = _auth_headers(api_key)
@@ -278,18 +460,13 @@ def generate_images(base_url, api_key, params, timeout=900, stream=False, partia
     if stream:
         payload["stream"] = True
         payload["partial_images"] = int(partial_images)
-    try:
-        r = _session().post(base + "/images/generations", json=payload, headers=headers,
-                            timeout=(CONNECT_TIMEOUT, timeout), stream=stream)
-    except requests.RequestException as e:
-        raise RuntimeError("[GPT-Image] generations 请求失败: %s" % e)
-    if r.status_code != 200:
-        raise RuntimeError("[GPT-Image] generations 失败 (%s): %s" % (r.status_code, r.text[:500]))
+    r = _post_with_retry(base + "/images/generations", headers=headers, timeout=timeout,
+                         stream=stream, attempts=attempts, label="generations", json=payload)
     return _stack(_result_tensors(r, timeout, stream))
 
 
 def edit_images(base_url, api_key, params, ref_pngs, mask_png=None,
-                timeout=900, stream=False, partial_images=1):
+                timeout=900, stream=False, partial_images=1, attempts=1):
     """POST {base}/images/edits (multipart, image[])。返回 IMAGE tensor [N,H,W,3]。"""
     if not ref_pngs:
         raise ValueError("[GPT-Image] 编辑端点(/images/edits) 至少需要一张参考图，请连接「图片1」。")
@@ -305,13 +482,8 @@ def edit_images(base_url, api_key, params, ref_pngs, mask_png=None,
              for i, png in enumerate(ref_pngs)]
     if mask_png is not None:
         files.append(("mask", ("mask.png", mask_png, "image/png")))
-    try:
-        r = _session().post(base + "/images/edits", data=form, files=files, headers=headers,
-                            timeout=(CONNECT_TIMEOUT, timeout), stream=stream)
-    except requests.RequestException as e:
-        raise RuntimeError("[GPT-Image] edits 请求失败: %s" % e)
-    if r.status_code != 200:
-        raise RuntimeError("[GPT-Image] edits 失败 (%s): %s" % (r.status_code, r.text[:500]))
+    r = _post_with_retry(base + "/images/edits", headers=headers, timeout=timeout,
+                         stream=stream, attempts=attempts, label="edits", data=form, files=files)
     return _stack(_result_tensors(r, timeout, stream))
 
 
