@@ -2,7 +2,7 @@
 name = "custom-gpt-image-2-api"
 description = "ComfyUI custom nodes for GPT-Image (gpt-image-2 and OpenAI-compatible image models). Text-to-image via /images/generations and image editing with up to 8 reference images via /images/edits. User-supplied base_url and api_key, no preset gateway."
 version = "3.4.0"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

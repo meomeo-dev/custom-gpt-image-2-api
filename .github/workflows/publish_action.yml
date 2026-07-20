@@ -1,0 +1,22 @@
+name: Publish to Comfy registry
+on:
+  workflow_dispatch:        # 支持在 GitHub Actions 页手动触发
+  push:
+    branches:
+      - main
+    paths:
+      - "pyproject.toml"    # 仅当版本号等元数据变化时才发布
+
+jobs:
+  publish-node:
+    name: Publish Custom Node to registry
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Publish Custom Node
+        uses: Comfy-Org/publish-node-action@main
+        with:
+          # 需在仓库 Settings → Secrets and variables → Actions 配置
+          # 名为 REGISTRY_ACCESS_TOKEN 的 secret（Registry 发布 API Key）。
+          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}

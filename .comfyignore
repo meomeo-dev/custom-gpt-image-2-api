@@ -1,0 +1,18 @@
+# 发布到 Comfy Registry 时排除的文件（语法同 .gitignore），减小发布包。
+# 仅排除「运行插件不需要」的东西；运行必需的 .py 与 web/ 一律保留。
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 测试脚本（非运行必需）
+test_api.py
+test_validation.py
+
+# 仓库文档（Registry 页用 README，其余开发文档不必随包分发）
+docs/
+CLAUDE.md
+
+# 系统杂项
+.DS_Store
+Thumbs.db
