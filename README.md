@@ -115,7 +115,7 @@ python test_api.py --base https://your-endpoint/v1 --key sk-你的key --model gp
 ## 安全说明(数据流向)
 
 - 请求只发往你在配置节点填写的 `base_url`;代码里没有任何预设域名、没有第三方图床、没有遥测 / 数据上报。
-- **密钥会随工作流保存**:`api_key` 作为节点参数会写进工作流的 `.json`,**分享工作流会连同密钥一起泄露**。分享前请清空密钥或删掉配置节点。
+- **密钥不再随工作流保存**(v3.4.0 修复):插件通过前端扩展把「密钥」widget 的持久化关闭,`api_key` **不会**写进导出的工作流 `.json`(也不进导出 PNG 内嵌的 workflow),分享工作流不会泄露密钥。同时密钥按 `base_url` 存进浏览器 localStorage,**本机重开工作流时自动回填、无需重填**。密钥仍会正常随请求发给后端执行。
 - 详见 [`docs/usage-and-security.md`](docs/usage-and-security.md)。
 
 ## 开发文档

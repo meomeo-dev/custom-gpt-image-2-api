@@ -76,10 +76,23 @@
 - **无第三方图床**:参考图直接以 `image[]` multipart 发往 `{base_url}/images/edits`,不经中转。
 - **无遥测 / 上报**:没有 telemetry / analytics / beacon / sentry,也没有 `eval` / `exec` / `subprocess` / `socket` 等隐蔽执行或网络逃逸。
 - **密钥只出现在请求头**:`Authorization: Bearer <key>`,绝不写进任何日志。错误日志只截取服务端响应体前若干字符,且不含密钥。
+- **密钥不写进工作流**:前端扩展 (`web/gpt_image_config_security.js`) 把配置节点「密钥」widget 的 `serialize` 关闭,使 `api_key` 不进 `widgets_values`。
 
-### ⚠️ 你需要知道的残留风险
+### ✅ 密钥泄露已修复(v3.4.0)
 
-- **api_key 会随工作流保存**:配置节点的密钥是节点参数,会写进工作流 `.json`。**分享 / 上传 / 截图工作流会连同密钥一起泄露**。分享前请清空密钥或删掉配置节点。
+- **原问题**:配置节点的「密钥」是节点 widget,ComfyUI 保存/导出工作流时会把所有 widget 值写进 `.json` 的 `widgets_values`(导出 PNG 也内嵌同一份 workflow),导致**分享 / 上传 / 截图工作流会连同密钥一起泄露**。
+- **关键约束**:ComfyUI 里「保存(Ctrl+S)」「导出」「输出图内嵌 workflow」三者都走同一个 `graph.serialize()`,前端**没有**可靠的「只在导出时剔除、保存时保留」钩子。故不去区分保存/导出,而是双管齐下(见下)。
+- **修复原理**:ComfyUI 前端把「执行」与「持久化」分成两条独立路径——执行 (`graphToPrompt`) 读 widget 实时值发给后端、只在 `widget.options.serialize === false` 时跳过;持久化 (`LGraphNode.serialize`) 生成 `widgets_values`、在 `widget.serialize === false` 时跳过。
+  1. 前端扩展对密钥 widget 设 `widget.serialize = false`(注意是 widget 自身属性,不是 `options.serialize`):密钥**照常参与执行**(后端仍拿得到 key),但**永不写进** `widgets_values`——任何序列化产物(本地保存的 `.json`、导出、PNG 内嵌)都不含它。
+  2. 密钥单独按 `base_url` 存进浏览器 **localStorage**:载入工作流 / 改地址时自动回填,**本机重开无需重填**;但它不进工作流 JSON,分享给别人时对方拿不到。
+- **索引安全**:密钥是配置节点最后一个 widget(`接口地址` 在前且照常保存),`configure()` 按 `serialize !== false` 过滤后定位,不会串位;旧的、已含 key 的工作流载入后其明文 key 会被丢弃、改由 localStorage 存档回填。
+- **多网关友好**:localStorage 按归一化后的 `base_url` 归档(去空白/末尾斜杠,与后端 `build` 一致),不同网关各存各的密钥;不依赖 ComfyUI 节点 id(id 会跨工作流碰撞,见第 6 节)。
+
+### ⚠️ 你仍需知道的残留风险
+
+- **localStorage 是明文本机存储**:密钥明文存在浏览器 profile 里,**同源 JS 可读、也留在磁盘**。它严格优于「写进会被分享的工作流」,是社区处理前端密钥的标准做法,但**不是加密保险箱**;共用电脑/浏览器需注意。想更强隔离可改存 ComfyUI 服务端本地配置文件(需加后端路由)。清空「密钥」widget 会同步删除本机存档。
+- **旧工作流可能已含明文密钥**:本次修复后新导出的工作流不再含密钥;但**修复前**已经保存/分享过的 `.json` 或 PNG 里可能仍有明文密钥。若你曾分享过,请**吊销并轮换 (revoke & rotate) 该密钥**。
+- **换浏览器/清缓存需重填一次**:localStorage 不跨浏览器、不跨设备;换机器或清了站点数据后,首次需重新填一次密钥(填后即再次存档)。
 - **base_url 决定数据去向**:密钥、提示词、参考图都会发给你填的地址。请只填你信任的服务端。
 - 若服务端在响应里返回了 `url`,插件会去下载该 `url`(取回结果图片所必需);该地址由你的服务端控制。
 

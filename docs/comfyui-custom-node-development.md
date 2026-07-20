@@ -78,7 +78,7 @@ __all__ = ["NODE_CLASS_MAPPINGS", "WEB_DIRECTORY"]
 
 JS 侧用 `app.registerExtension({...})` 注册；后端可通过 `PromptServer.instance.send_sync(type, payload)` 向前端推消息，前端用 `app.api.addEventListener` 监听、从 `event.detail` 读取。
 
-> 本插件不需要前端 JS，故未导出 `WEB_DIRECTORY`。
+> 本插件用一个前端扩展（`web/gpt_image_config_security.js`）把配置节点「密钥」widget 的 `serialize` 关掉，使 `api_key` 不写进保存/导出的工作流 JSON（防分享泄露），故 `__init__.py` 导出了 `WEB_DIRECTORY = "./web"` 并加入 `__all__`。
 
 ## 7. 打包与发布（pyproject.toml）
 
@@ -108,7 +108,7 @@ DisplayName = "..."
 | 自定义类型 | `IMAGE_API_CONFIG = (base_url, api_key)` |
 | 四个必需属性 | 各节点均有 `INPUT_TYPES` / `RETURN_TYPES` / `FUNCTION` / `CATEGORY` |
 | IMAGE 处理 | `api_client.py` 里 `tensor_to_png_bytes` / `bytes_to_tensor` 处理 `[B,H,W,C]` |
-| 前端 JS | 不需要，未导出 `WEB_DIRECTORY` |
+| 前端 JS | `web/gpt_image_config_security.js`：关闭配置节点「密钥」widget 的 `serialize`，使 api_key 不写进保存/导出的工作流（防分享泄露），故导出了 `WEB_DIRECTORY` |
 
 ## 来源
 

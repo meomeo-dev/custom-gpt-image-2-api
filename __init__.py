@@ -16,4 +16,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "GPTImageSizeSnap": "GPT-Image 尺寸规范化 (16倍数/边长)",
 }
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+# 前端扩展目录：web/gpt_image_config_security.js 把配置节点「密钥」widget 的
+# serialize 关掉，使密钥不写进保存/导出的工作流 JSON（防分享泄露），
+# 但仍随 prompt 发给后端执行。详见该 JS 文件与 docs/usage-and-security.md。
+WEB_DIRECTORY = "./web"
+
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

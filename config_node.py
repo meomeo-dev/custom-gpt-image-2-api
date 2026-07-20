@@ -4,8 +4,10 @@
 输出自定义类型 IMAGE_API_CONFIG (一个 (base_url, api_key) 元组)，
 连接到生成节点的「配置」输入，即可「设置一次，多个节点复用」。
 
-安全提示 (security note)：api_key 作为 widget 会随工作流 .json 一起保存，
-分享工作流时会连同密钥一起泄露，请自行注意。
+安全提示 (security note)：本插件通过前端扩展 (web/gpt_image_config_security.js)
+把「密钥」widget 的 serialize 关闭，使 api_key 不会写进保存/导出的工作流 .json
+（也不进导出 PNG 内嵌的 workflow），从根源避免分享工作流时泄露密钥；
+同时把密钥按 base_url 存进浏览器 localStorage，本机重开工作流时自动回填、无需重填。
 """
 
 

@@ -34,6 +34,7 @@ python test_api.py --base ... --key ... --prompt "..." --image a.png --image b.p
 
 - `__init__.py` — ComfyUI 入口,导出 `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAME_MAPPINGS`。这里的内部 key 会写进工作流 `.json`,**改 key 会让旧工作流找不到节点**。
 - `config_node.py` — `ImageAPIConfig`,输出自定义类型 `IMAGE_API_CONFIG`(就是 `(base_url, api_key)` 元组),一处配置可连多个节点。
+- `web/gpt_image_config_security.js` — 前端扩展:把配置节点「密钥」widget 的 `widget.serialize` 设为 `false`,使 `api_key` **不写进保存/导出的工作流 JSON**(防分享泄露),但仍随 prompt 发给后端执行(执行走 `options.serialize`、持久化走 `widget.serialize`,是两条独立路径)。另把密钥按归一化 `base_url` 存进浏览器 localStorage,载入/改地址时自动回填,**本机重开免重填**。故 `__init__.py` 导出 `WEB_DIRECTORY`。
 - `nodes_gpt_image.py` — 两个执行节点 `GPTImageGenerate`(`/images/generations`)与 `GPTImageEdit`(`/images/edits`)。它们是**薄封装**:只收集 widget 参数并转交 `api_client`,不含业务逻辑。端点由「用户选哪个节点」显式决定,**不靠有无参考图隐式切换**。
 - `api_client.py` — **核心**:tensor↔bytes 转换、`build_params`(内含 `_validate` 单一校验入口)、`MODEL_RULES` 能力表、`generate_images`/`edit_images`、`_post_with_retry`、SSE 流式解析、带 TCP keepalive 的共享 `requests.Session`、`b64_json`/`url` 双通道结果读取。改行为基本都在这里。
 
